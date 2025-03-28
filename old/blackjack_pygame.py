@@ -1,5 +1,5 @@
 import pygame as pygame
-from blackjack_deck import *
+from blackjack import *
 from constants import *
 import sys
 import time

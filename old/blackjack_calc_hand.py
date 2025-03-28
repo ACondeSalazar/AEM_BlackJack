@@ -1,4 +1,4 @@
-from blackjack_deck import *
+from blackjack import *
 
 deck = Deck()
 deck.shuffle()
