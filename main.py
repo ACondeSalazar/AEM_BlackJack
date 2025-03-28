@@ -45,7 +45,7 @@ def display_all_hands(game):
     # Display dealer's score below the cards
     dealer_score_font = pygame.font.Font(None, 36)
     dealer_score_text = dealer_score_font.render(f"Score: {game.dealer.get_score()}", True, (255, 255, 255))
-    screen.blit(dealer_score_text, (dealer_x, dealer_y + 100))
+    screen.blit(dealer_score_text, (dealer_x, dealer_y + 200))
 
     player1_x = 50
     player1_y = screen_height - 150
@@ -101,30 +101,51 @@ while running:
     
     screen.fill(background_color)
     
+    everyoneFinished = game.update()
+    
+    # Display player turn in the top left
+    turn_font = pygame.font.Font(None, 36)
+    if game.playerTurn == 0:
+        turn_text = turn_font.render("Player 1's Turn", True, (255, 255, 255))
+    elif game.playerTurn == 1:
+        turn_text = turn_font.render("Player 2's Turn", True, (255, 255, 255))
+    else:
+        turn_text = turn_font.render("Dealer's Turn", True, (255, 255, 255))
+    screen.blit(turn_text, (10, 10))
+    
+    if game.playerTurn == 0 and not game.players[0].finishedTurn and not game.players[0].busted:
+        hit_button, stand_button = create_buttons()
+    
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
         # Human player input handling
-        if game.playerTurn == 0 and not game.players[0].finishedTurn:
+        if game.playerTurn == 0 and not game.players[0].finishedTurn and not game.players[0].busted:
+            
             if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 if hit_button.collidepoint(event.pos):
                     game.players[0].draw(game.deck)
-                    print("hit")
+                    
                 elif stand_button.collidepoint(event.pos):
                     game.players[0].stand()
-                    print("stand")
 
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+            if game.playerTurn == 1 and not game.players[1].busted:
+                game.players[1].play(game.deck, [])
+    
 
-    turnFinished = game.update()
-
-    if game.playerTurn == 1:
-        game.players[1].play(game.deck)
-
-    if turnFinished:
+    if game.playerTurn == 1 and not game.players[1].busted:
         pass
+        #time.sleep(1)
+        #game.players[1].play(game.deck, [])
+
+    if everyoneFinished:
+        pass #game.dealer.play(game.deck, [])
 
     display_all_hands(game)
+    
+    
 
     pygame.display.flip()
 

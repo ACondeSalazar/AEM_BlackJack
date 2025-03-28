@@ -37,6 +37,7 @@ class Hand(Deck):
         self.cards.append(card)
 
     def calc_hand(self):
+        self.value = 0
         first_card_index = [a_card[0] for a_card in self.cards]
         non_aces = [c for c in first_card_index if c != 'A']
         aces = [c for c in first_card_index if c == 'A']
@@ -62,6 +63,7 @@ class Hand(Deck):
                 self.card_img.append(cards)
                 
     def score(self):
+        self.value = 0
         self.calc_hand()
         return self.value
                 
@@ -86,15 +88,20 @@ class Player:
 
     def __init__(self):
         self.finishedTurn = False
+        self.busted = False
         self.hand = Hand()
         self.name = "Player"
 
     def draw(self, deck):
+        self.finishedTurn = True
         drawn_card = deck.deal()
         self.hand.add_card(drawn_card)
         
+        if self.get_score() > 21:
+            self.busted = True
+        
     def stand(self):
-        self.finishedTurn = False
+        self.finishedTurn = True
         
     def play(self,deck, state):
         self.draw(deck)
@@ -105,8 +112,11 @@ class Player:
 class Dealer(Player):
     
     def __init__(self):
-        self.hand = Hand()
+        super().__init__()
         self.name = "Dealer"
+        
+    def draw(self,deck, state):
+        super().draw(deck,[])
         
     def play(self,deck, state):
         self.hand.calc_hand()
@@ -118,12 +128,12 @@ class Dealer(Player):
     
 class AIPlayer(Player):
     def __init__(self):
-        self.hand = Hand()
+        super().__init__()
         self.name = "AI"
         
     def play(self,deck, state):
         self.draw(deck)
-        if len(self.hand > 3):
+        if len(self.hand) > 3:
             self.stand()
 
 class BlackJack:
@@ -142,13 +152,8 @@ class BlackJack:
         self.deck.shuffle()
         
         self.dealer = Dealer()
-        self.dealer.draw(self.deck)
         
-        self.players[0].draw(self.deck)
-        self.players[0].draw(self.deck)
-        
-        self.players[1].draw(self.deck)
-        self.players[1].draw(self.deck)
+        self.reset_players()
                 
         
     def print_hands(self):
@@ -174,9 +179,68 @@ class BlackJack:
         
         self.print_hands()
         
+    def reset_players(self):
+        self.playerTurn = 0
+        
+        self.deck = Deck()
+        self.deck.shuffle()
+        
+        self.dealer.hand = Hand()        
+        
+        for player in self.players:
+            player.hand = Hand()
+            
+        self.dealer.draw(self.deck)
+        self.players[0].draw(self.deck)
+        self.players[0].draw(self.deck)
+        self.players[1].draw(self.deck)
+        self.players[1].draw(self.deck)
+        
+        for player in self.players:
+            player.finishedTurn = False
+            player.busted = False
+            
+    def check_winner(self):
+        dealer_score = self.dealer.get_score()
+        player_scores = [player.get_score() for player in self.players]
+        
+        if dealer_score > 21:
+            winners = [player.name for player in self.players if player.get_score() <= 21]
+            if winners:
+            print(f"Winner(s): {', '.join(winners)}")
+            else:
+            print("No winners, everyone busted.")
+            return
+        
+        # Check for players who didn't bust and have a higher score than the dealer
+        winners = []
+        for player in self.players:
+            if not player.busted and player.get_score() > dealer_score:
+            winners.append(player.name)
+        
+        # If no players beat the dealer, the dealer wins
+        if not winners:
+            print("Dealer wins!")
+        else:
+            print(f"Winner(s): {', '.join(winners)}")
+        
     def update(self):
-        if self.players[self.playerTurn].finishedTurn:
-            self.playerTurn = (self.playerTurn + 1) % len(self.players)
+        if self.players[self.playerTurn].finishedTurn or self.players[self.playerTurn].busted:
+            print(f"Condition: finishedTurn={self.players[self.playerTurn].finishedTurn}, busted={self.players[self.playerTurn].busted}")
+            print(f"player turn is {self.playerTurn}")
+            self.playerTurn += 1
+            
+            if self.playerTurn >= len(self.players):
+                while not self.dealer.finishedTurn:
+                    self.dealer.play(self.deck, [])
+                    
+                    self.playerTurn = 0
+                self.check_winner()
+            
+        self.check_winner()
+            
+        return False
+        
         
         
         
