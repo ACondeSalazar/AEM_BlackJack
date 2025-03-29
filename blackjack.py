@@ -1,6 +1,8 @@
 import random
+
+import numpy as np
 from constants import *
-from collections import namedtuple
+from collections import defaultdict, namedtuple
 
 class Deck:
     def __init__(self):
@@ -93,14 +95,16 @@ class Player:
         self.name = "Player"
 
     def draw(self, deck):
-        self.finishedTurn = True
+
         drawn_card = deck.deal()
         self.hand.add_card(drawn_card)
         
         if self.get_score() > 21:
             self.busted = True
+            self.finishedTurn = True
         
     def stand(self):
+        self.busted = False
         self.finishedTurn = True
         
     def play(self,deck, state):
@@ -115,8 +119,9 @@ class Dealer(Player):
         super().__init__()
         self.name = "Dealer"
         
-    def draw(self,deck, state):
-        super().draw(deck,[])
+    def draw(self, deck):
+        # Changed from draw(self, deck, state) to match parent class
+        super().draw(deck)
         
     def play(self,deck, state):
         self.hand.calc_hand()
@@ -127,14 +132,72 @@ class Dealer(Player):
             self.draw(deck)
     
 class AIPlayer(Player):
-    def __init__(self):
+    
+    def __init__(self, e=0.1, gamma=1, alpha=0.02):
         super().__init__()
         self.name = "AI"
+        self.e = e
+        self.gamma = gamma
+        self.alpha = alpha
+        self.Q = defaultdict(lambda: np.zeros(2))  
+        self.currentEpisode = [] 
+
+    def play(self, otherPlayerHand, dealerHand):
+        """       
+        print(f"Cartes du joueur 0: {self.hand}")
+        print(f"Score: {self.hand.score()}")
+        print(f"Cartes du joueur 1: {otherPlayerHand}")
+        print(f"Score: {otherPlayerHand.score()}")
+        print(f"Cartes du Dealer: {dealerHand}")
+        print(f"Score: {dealerHand.score()}") 
+        """
+        currentState = self.createStateValues(otherPlayerHand, dealerHand)
+        print(f"Current state: {currentState}")
+        action = self.genAction(currentState, self.e, self.Q)
+        print(f"Action: {action}")
+        self.currentEpisode.append((currentState, action, None))
+
+        return action
+
+
+    # créer un etat en fonction du score de la main de l'ia de l'autre joueur et du dealer 
+    def createStateValues(self,otherPlayerHand, dealerHand ):
+        return  self.hand.score(), otherPlayerHand.score(), dealerHand.score() 
+
+    def genAction(self, state, e, Q):
+        probHit = Q[state][1]
+        probStick = Q[state][0]
         
-    def play(self,deck, state):
-        self.draw(deck)
-        if len(self.hand) > 3:
-            self.stand()
+        if probHit>probStick:
+            probs = [e, 1-e]
+        elif probStick>probHit:
+            probs = [1-e, e]
+        else:
+            probs = [0.5, 0.5]
+            
+        action = np.random.choice(np.arange(2), p=probs)   
+        return action 
+
+
+    def setQ(self): 
+        if not self.currentEpisode:
+            return True
+        
+        for t in range(len(self.currentEpisode)):
+            state, action, _ = self.currentEpisode[t]
+            
+            # Calculer la récompense future avec discount
+            Gt = 0
+            for i in range(t, len(self.currentEpisode)):
+                _, _, reward = self.currentEpisode[i]
+                Gt += reward * (self.gamma ** (i - t))
+            
+            # Mise à jour de Q
+            self.Q[state][action] += self.alpha * (Gt - self.Q[state][action])
+        
+        self.currentEpisode = []
+        return True
+
 
 class BlackJack:
     def __init__(self):
@@ -154,6 +217,7 @@ class BlackJack:
         self.dealer = Dealer()
         
         self.reset_players()
+        self.gameOver = False
                 
         
     def print_hands(self):
@@ -178,6 +242,9 @@ class BlackJack:
         self.players[1].play(self.deck, [])
         
         self.print_hands()
+        self.players[1].setQ()
+        self.players[1].currentEpisode = []
+
         
     def reset_players(self):
         self.playerTurn = 0
@@ -199,48 +266,71 @@ class BlackJack:
         for player in self.players:
             player.finishedTurn = False
             player.busted = False
+            player.currentEpisode = [] 
             
     def check_winner(self):
         dealer_score = self.dealer.get_score()
-        player_scores = [player.get_score() for player in self.players]
         
         if dealer_score > 21:
             winners = [player.name for player in self.players if player.get_score() <= 21]
             if winners:
-            print(f"Winner(s): {', '.join(winners)}")
+                print(f"Winner(s): {', '.join(winners)}")
             else:
-            print("No winners, everyone busted.")
+                print("No winners, everyone busted.")
             return
         
-        # Check for players who didn't bust and have a higher score than the dealer
         winners = []
+        ties = []
+        
         for player in self.players:
-            if not player.busted and player.get_score() > dealer_score:
-            winners.append(player.name)
+            if not player.busted:
+                player_score = player.get_score()
+                if player_score > dealer_score:
+                    winners.append(player.name)
+                elif player_score == dealer_score:
+                    ties.append(player.name)
         
-        # If no players beat the dealer, the dealer wins
-        if not winners:
-            print("Dealer wins!")
-        else:
+        if winners:
             print(f"Winner(s): {', '.join(winners)}")
+        if ties:
+            print(f"Tie(s): {', '.join(ties)}")
+        if not winners and not ties:
+            print(f"Dealer wins with score {dealer_score}")
+
+        ai_player = self.players[1]
+        ai_score = ai_player.get_score()
+        human_score = self.players[0].get_score()
+
+        reward = -1
+
+        if not ai_player.busted:
+            if (ai_score > human_score or self.players[0].busted) and (ai_score > dealer_score or dealer_score > 21):
+                reward = 1
+            elif (ai_score == human_score and (ai_score > dealer_score or dealer_score > 21)) or (ai_score == dealer_score and (ai_score > human_score or self.players[0].busted)):
+                reward = 0
+
+        for i in range(len(ai_player.currentEpisode)):
+            state, action, _ = ai_player.currentEpisode[i]
+            ai_player.currentEpisode[i] = (state, action, reward)
+
+
+        self.players[1].setQ()
         
+
     def update(self):
+        all_players_finished = all(player.finishedTurn or player.busted for player in self.players)
+        
+        if all_players_finished:
+            return True 
+       
         if self.players[self.playerTurn].finishedTurn or self.players[self.playerTurn].busted:
-            print(f"Condition: finishedTurn={self.players[self.playerTurn].finishedTurn}, busted={self.players[self.playerTurn].busted}")
-            print(f"player turn is {self.playerTurn}")
-            self.playerTurn += 1
+            currrenPlayer = self.playerTurn
+            self.playerTurn = (self.playerTurn + 1) % len(self.players)
             
-            if self.playerTurn >= len(self.players):
-                while not self.dealer.finishedTurn:
-                    self.dealer.play(self.deck, [])
-                    
-                    self.playerTurn = 0
-                self.check_winner()
-            
-        self.check_winner()
-            
+            while (self.players[self.playerTurn].finishedTurn or self.players[self.playerTurn].busted):
+                if (self.playerTurn + 1) % len(self.players) == currrenPlayer:
+                    return True 
+        
         return False
-        
-        
-        
-        
+
+

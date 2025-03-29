@@ -120,6 +120,16 @@ while running:
         if event.type == pygame.QUIT:
             running = False
 
+        if game.gameOver:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                print("-----------------------Restarting game------------------------")
+                game.gameOver = False
+                everyoneFinished = False
+                game.reset_players()
+                screen.fill(background_color)
+                hit_button, stand_button = create_buttons()
+                continue
+
         # Human player input handling
         if game.playerTurn == 0 and not game.players[0].finishedTurn and not game.players[0].busted:
             
@@ -129,19 +139,28 @@ while running:
                     
                 elif stand_button.collidepoint(event.pos):
                     game.players[0].stand()
+                    
 
         if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
             if game.playerTurn == 1 and not game.players[1].busted:
                 game.players[1].play(game.deck, [])
     
 
-    if game.playerTurn == 1 and not game.players[1].busted:
-        pass
-        #time.sleep(1)
-        #game.players[1].play(game.deck, [])
+    if game.playerTurn == 1 and not game.players[1].busted and not game.players[1].finishedTurn:
+        if(game.players[1].play(game.players[0].hand, game.dealer.hand) == 1):
+            game.players[1].draw(game.deck)
+        else:
+            game.players[1].stand()
 
     if everyoneFinished:
-        pass #game.dealer.play(game.deck, [])
+        if not game.gameOver :
+            print("Dealer's turn")
+            while (game.dealer.get_score() < 17):
+                game.dealer.draw(game.deck)
+            game.dealer.stand()
+            game.check_winner()
+            game.gameOver = True
+
 
     display_all_hands(game)
     
