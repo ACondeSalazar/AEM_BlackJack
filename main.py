@@ -117,7 +117,25 @@ while running:
         hit_button, stand_button = create_buttons()
     
     for event in pygame.event.get():
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_t:  # Touche T pour lancer l'entraînement
+                print("\nLancement du mode entraînement...")
+                # Désactiver l'affichage pendant l'entraînement pour accélérer
+                game.train_ai(episodes=1000000)
+                print("Entraînement terminé, la table Q a été sauvegardée.")
+                game.gameOver = False
+                game.reset_players()
+
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_s:
+            # Sauvegarder la table Q
+            if isinstance(game.players[1], AIPlayer):
+                game.players[1].save_q()
+            print("Table Q sauvegardée")
+
         if event.type == pygame.QUIT:
+            if isinstance(game.players[1], AIPlayer):
+                game.players[1].save_q()
             running = False
 
         if game.gameOver:
