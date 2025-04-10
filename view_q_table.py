@@ -8,7 +8,7 @@ with open('q_table.pkl', 'rb') as f:
 
 # Extraire les états pertinents (par exemple, ceux où le score du joueur est entre 12 et 21)
 filtered_states = {state: values for state, values in data.items() 
-                  if isinstance(state, tuple) and len(state) >= 1 and 12 <= state[0] <= 21}
+                  if isinstance(state, tuple) and len(state) >= 1 and 3 <= state[0] <= 21}
 
 # Organiser par score du joueur
 player_scores = sorted(set(state[0] for state in filtered_states.keys()))

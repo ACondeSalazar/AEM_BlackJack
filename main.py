@@ -122,7 +122,7 @@ while running:
             if event.key == pygame.K_t:  # Touche T pour lancer l'entraînement
                 print("\nLancement du mode entraînement...")
                 # Désactiver l'affichage pendant l'entraînement pour accélérer
-                game.train_ai(episodes=1000000)
+                game.train_ai(episodes=150000)
                 print("Entraînement terminé, la table Q a été sauvegardée.")
                 game.gameOver = False
                 game.reset_players()
@@ -165,10 +165,18 @@ while running:
     
 
     if game.playerTurn == 1 and not game.players[1].busted and not game.players[1].finishedTurn:
-        if(game.players[1].play(game.players[0].hand, game.dealer.hand) == 1):
+        action = game.players[1].mcts_decision(game.players[0].get_score(), game.dealer.get_score())
+        if action == 1:
+            print("L'IA décide de piocher.")
             game.players[1].draw(game.deck)
         else:
+            print("L'IA décide de rester (stand).")
             game.players[1].stand()
+
+        #if(game.players[1].play(game.players[0].hand, game.dealer.hand) == 1):
+            #game.players[1].draw(game.deck)
+        #else:
+            #game.players[1].stand()
 
     if everyoneFinished:
         if not game.gameOver :
