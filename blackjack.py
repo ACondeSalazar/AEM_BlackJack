@@ -5,6 +5,12 @@ import numpy as np
 from constants import *
 from collections import defaultdict, namedtuple
 
+from collections import deque
+
+# Keep track of the last 10,000 outcomes
+recent_results = deque(maxlen=10000)
+
+
 class Deck:
     def __init__(self):
         self.cards = []
@@ -134,7 +140,7 @@ class Dealer(Player):
     
 class AIPlayer(Player):
     
-    def __init__(self, e=0.6, gamma=0.95, alpha=0.015):
+    def __init__(self, e=1.0, gamma=1.00, alpha=0.02):
         super().__init__()
         self.name = "AI"
         self.e = e
@@ -144,32 +150,58 @@ class AIPlayer(Player):
         self.currentEpisode = [] 
 
     def play(self, otherPlayerHand, dealerHand):
-        """       
-        print(f"Cartes du joueur 0: {self.hand}")
-        print(f"Score: {self.hand.score()}")
-        print(f"Cartes du joueur 1: {otherPlayerHand}")
-        print(f"Score: {otherPlayerHand.score()}")
-        print(f"Cartes du Dealer: {dealerHand}")
-        print(f"Score: {dealerHand.score()}") 
-        """
+        # Get normalized state
         currentState = self.createStateValues(otherPlayerHand, dealerHand)
-        print(f"Current state: {currentState}")
+        
+        # Select action based on state (using your existing genAction method)
         action = self.genAction(currentState, self.e, self.Q)
-        print(f"Action: {action}")
+        
+        # Store state-action pair with initial None reward (will be updated later)
         self.currentEpisode.append((currentState, action, None))
-
+        
         return action
 
 
     # créer un etat en fonction du score de la main de l'ia de l'autre joueur et du dealer 
-    def createStateValues(self,otherPlayerHand, dealerHand ):
-        return  self.hand.score(), otherPlayerHand.score(), dealerHand.score() 
+    def createStateValues(self, otherPlayerHand, dealerHand):
+        """
+        Normalize the state values for better generalization.
+        - Cap player score at 21
+        - Group dealer scores
+        """
+        # Cap player score at 21 to reduce state space
+        player_score = min(21, self.hand.score())
+        
+        # Get other scores
+        other_score = otherPlayerHand.score()
+        dealer_score = dealerHand.score()
+        
+        # Track if we have usable ace (value 11) for better state representation
+        has_usable_ace = self.hand.nbAces > 0 and player_score <= 21
+        
+        # Normalize dealer score - group high values to reduce state space
+        if dealer_score > 19:
+            dealer_score = 19
+        
+        return (player_score, other_score, dealer_score, has_usable_ace)
 
     def genAction(self, state, e, Q):
-        if random.uniform(0, 1) < e:
-            return random.choice([0, 1])  # Exploration pure (Hit ou Stand)
+        # Always hit if score <= 11
+        #if self.get_score() <= 11:
+        #    return 1
+        
+        # With probability e, choose a random action (exploration)
+        if random.random() < e:
+            return random.choice([0, 1])
+        
+        # With probability 1-e, choose the best action (exploitation)
+        if Q[state][0] > Q[state][1]:
+            return 0  # Stand
+        elif Q[state][1] > Q[state][0]:
+            return 1  # Hit
         else:
-            return np.argmax(Q[state])  # Exploitation (choisir l'action avec la plus grande valeur)
+            # If both actions have equal value, choose randomly
+            return random.choice([0, 1])
 
 
 
@@ -184,7 +216,7 @@ class AIPlayer(Player):
             state, action, reward = self.currentEpisode[t]
             Gt = reward + self.gamma * Gt
             visits_count[(state, action)] += 1  
-            self.Q[state][action] += (1 / visits_count[(state, action)]) * (Gt - self.Q[state][action])
+            self.Q[state][action] += self.alpha * (Gt - self.Q[state][action])
             
         self.currentEpisode = []
         return True
@@ -220,6 +252,42 @@ class AIPlayer(Player):
             print(f"Erreur lors du chargement de la table Q: {e}")
             return False 
 
+    def draw(self, deck):
+        # Store old score before drawing
+        old_score = self.get_score()
+        
+        # Draw card (use parent method)
+        drawn_card = deck.deal()
+        self.hand.add_card(drawn_card)
+        
+        # Calculate new score
+        new_score = self.get_score()
+        
+        # Provide intermediate reward based on score improvement
+        if len(self.currentEpisode) > 0 and self.currentEpisode[-1][1] == 1:  # If last action was Hit
+            last_state, last_action, _ = self.currentEpisode[-1]
+            
+            # Calculate intermediate reward
+            intermediate_reward = 0
+            
+            # Reward for improving hand without busting
+            if new_score > old_score and new_score <= 21:
+                intermediate_reward = 0.1
+            # Small penalty for drawing but not improving (like drawing a low card when already high)
+            elif new_score == old_score:
+                intermediate_reward = -0.05
+            # Larger penalty for busting
+            elif new_score > 21:
+                intermediate_reward = -0.2
+                
+            # Update the last action in the episode with the intermediate reward
+            self.currentEpisode[-1] = (last_state, last_action, intermediate_reward)
+        
+        # Check if busted
+        if self.get_score() > 21:
+            self.busted = True
+            self.finishedTurn = True
+
 class BlackJack:
     def __init__(self):
         self.players = []
@@ -235,6 +303,7 @@ class BlackJack:
         
         if isinstance(self.players[1], AIPlayer):
             self.players[1].load_q()
+            pass
 
         self.deck = Deck()
         self.deck.shuffle()
@@ -383,9 +452,15 @@ class BlackJack:
             print("AI ties with someone, reward = 0")
 
         # Propager la récompense à toutes les actions prises par l'IA
-        for i in range(len(ai_player.currentEpisode)):
-            state, action, _ = ai_player.currentEpisode[i]
-            ai_player.currentEpisode[i] = (state, action, reward)
+        for idx in range(len(ai_player.currentEpisode)):
+            state, action, current_reward = ai_player.currentEpisode[idx]
+            
+            # If this is the last action of the episode or there's no intermediate reward yet
+            if idx == len(ai_player.currentEpisode) - 1 or current_reward is None:
+                ai_player.currentEpisode[idx] = (state, action, reward)
+            else:
+                # Add final reward to existing intermediate reward
+                ai_player.currentEpisode[idx] = (state, action, current_reward + reward * 0.5)
 
         self.players[1].setQ()  
         
@@ -452,12 +527,18 @@ class BlackJack:
             human_score = self.players[0].get_score()
             dealer_score = self.dealer.get_score()
             
+            
+            reward_win = 1
+            reward_tie = 0
+            reward_loss = -1
+            
             # Calculer la récompense
-            reward = -1  # Par défaut (défaite)
+            reward = reward_loss  # Par défaut (défaite)
+            
 
             # Vérification prioritaire du score de l'IA
             if ai_score > 21:
-                reward = -1
+                reward = reward_loss
             else:
                 ai_busted = ai_player.busted
                 human_busted = self.players[0].busted
@@ -466,53 +547,69 @@ class BlackJack:
                 if not human_busted and not dealer_busted:
                     # Ni le joueur ni le dealer n'ont busté
                     if ai_score > human_score and ai_score > dealer_score:
-                        reward = 1
+                        reward = reward_win
                     elif ai_score == human_score or ai_score == dealer_score:
-                        reward = 0
+                        reward = reward_tie
                     else:
-                        reward = -1
+                        reward = reward_loss
                 elif dealer_busted and not human_busted:
                     # Seul le dealer est busté
                     if ai_score > human_score:
-                        reward = 1
+                        reward = reward_win
                     elif ai_score == human_score:
-                        reward = 0
+                        reward = reward_tie
                     else:
-                        reward = -1
+                        reward = reward_loss
                 elif human_busted and not dealer_busted:
                     # Seul le joueur est busté
                     if ai_score > dealer_score:
-                        reward = 1
+                        reward = reward_win
                     elif ai_score == dealer_score:
-                        reward = 0
+                        reward = reward_tie
                     else:
-                        reward = -1
+                        reward = reward_loss
                 elif not ai_busted and dealer_busted and human_busted:
-                    reward = 1
+                    reward = reward_win
                 else:
-                    reward = -1
-            if reward == -1:
+                    reward = reward_loss
+                    
+            if reward == reward_loss:
                 losses += 1
-            elif reward == 1:
+                recent_results.append(0)
+            elif reward == reward_win:
                 wins += 1
-            elif reward == 0:
+                recent_results.append(1)
+            elif reward == reward_tie:
                 ties += 1
+                recent_results.append(0)
 
-            # Mettre à jour currentEpisode avec la récompense calculée
+            #Mettre à jour currentEpisode avec la récompense calculée
             for idx in range(len(ai_player.currentEpisode)):
                 state, action, _ = ai_player.currentEpisode[idx]
                 ai_player.currentEpisode[idx] = (state, action, reward)
             
-            # Mise à jour de la table Q
+            #Mise à jour de la table Q
             self.players[1].setQ()
             
             # Afficher la progression régulièrement
-            if (i + 1) % 1000 == 0:
+            if (i + 1) % 10000 == 0:
                 win_rate = (wins / (i + 1)) * 100
-                print(f"Partie {i + 1}/{episodes} - Taux de victoire: {win_rate:.2f}%")
+                recent_win_rate = (sum(recent_results) / len(recent_results)) * 100 if recent_results else 0
+                progress = ((i + 1) / episodes) * 100
+                print(f"Progress: {progress:.2f}% - Partie {i + 1}/{episodes} - "
+                        f"global wr: {win_rate:.2f}%, "
+                        f"10k last: {recent_win_rate:.2f}%, "
+                        f"win: {wins}, loss: {losses}, tie: {ties}, "
+                        f"e: {self.players[1].e:.4f}, alpha: {self.players[1].alpha:.4f}, gamma: {self.players[1].gamma:.4f}")
                 # Sauvegarde périodique
                 if isinstance(self.players[1], AIPlayer):
                     self.players[1].save_q()
+                    pass
+                
+
+            if isinstance(self.players[1], AIPlayer):
+                if self.players[1].e != 1.0 and self.players[1].e != 0.0:
+                    self.players[1].e = max(0.01, self.players[1].e * 0.9999999) 
         
         # Afficher les résultats finaux
         print(f"\nEntraînement terminé!")

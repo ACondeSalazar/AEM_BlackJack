@@ -122,7 +122,7 @@ while running:
             if event.key == pygame.K_t:  # Touche T pour lancer l'entraînement
                 print("\nLancement du mode entraînement...")
                 # Désactiver l'affichage pendant l'entraînement pour accélérer
-                game.train_ai(episodes=1000000)
+                game.train_ai(episodes=100000000)
                 print("Entraînement terminé, la table Q a été sauvegardée.")
                 game.gameOver = False
                 game.reset_players()
