@@ -7,8 +7,8 @@ import pygame
 #pygame init
 pygame.init()
 
-screen_width = 800
-screen_height = 600
+screen_width = 1000
+screen_height = 700
 screen = pygame.display.set_mode((screen_width, screen_height))
 pygame.display.set_caption("BlackJack Game")
 
@@ -57,7 +57,7 @@ def display_all_hands(game):
     player1_score_text = player1_score_font.render(f"Score: {game.players[0].get_score()}", True, (255, 255, 255))
     screen.blit(player1_score_text, (player1_x, player1_y - 50))
 
-    player2_x = screen_width - len(game.players[1].hand) * 40 - 50
+    player2_x = screen_width - len(game.players[1].hand) * 40 - 100
     player2_y = screen_height - 150
     for i, card in enumerate(game.players[1].hand):
         show_card_at(card, player2_x + i * 40, player2_y)
@@ -91,6 +91,12 @@ def create_buttons():
     return hit_button_rect, stand_button_rect
 
 
+def reset_game():
+    game.gameOver = False
+    game.reset_players()
+    screen.fill(background_color)
+    hit_button, stand_button = create_buttons()
+
 
 clock = pygame.time.Clock()
 FPS = 60
@@ -108,13 +114,22 @@ while running:
     if game.playerTurn == 0:
         turn_text = turn_font.render("Player 1's Turn", True, (255, 255, 255))
     elif game.playerTurn == 1:
-        turn_text = turn_font.render("Player 2's Turn", True, (255, 255, 255))
+        turn_text = turn_font.render("IA's Turn", True, (255, 255, 255))
     else:
         turn_text = turn_font.render("Dealer's Turn", True, (255, 255, 255))
     screen.blit(turn_text, (10, 10))
     
+        
+    if game.playerTurn == 1 and not game.players[1].busted and not game.players[1].finishedTurn:
+        time.sleep(1)
+        if(game.players[1].play(game.players[0].hand, game.dealer.hand) == 1):
+            game.players[1].draw(game.deck)
+        else:
+            game.players[1].stand()
+            
     if game.playerTurn == 0 and not game.players[0].finishedTurn and not game.players[0].busted:
         hit_button, stand_button = create_buttons()
+    
     
     for event in pygame.event.get():
 
@@ -140,13 +155,7 @@ while running:
 
         if game.gameOver:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
-                print("-----------------------Restarting game------------------------")
-                game.gameOver = False
-                everyoneFinished = False
-                game.reset_players()
-                screen.fill(background_color)
-                hit_button, stand_button = create_buttons()
-                continue
+                reset_game()
 
         # Human player input handling
         if game.playerTurn == 0 and not game.players[0].finishedTurn and not game.players[0].busted:
@@ -164,20 +173,20 @@ while running:
                 game.players[1].play(game.deck, [])
     
 
-    if game.playerTurn == 1 and not game.players[1].busted and not game.players[1].finishedTurn:
-        if(game.players[1].play(game.players[0].hand, game.dealer.hand) == 1):
-            game.players[1].draw(game.deck)
-        else:
-            game.players[1].stand()
+    
 
     if everyoneFinished:
         if not game.gameOver :
             print("Dealer's turn")
-            while (game.dealer.get_score() < 17):
+            if game.dealer.get_score() < 17:
+                time.sleep(1)
                 game.dealer.draw(game.deck)
-            game.dealer.stand()
-            game.check_winner()
-            game.gameOver = True
+            else:
+                game.dealer.stand()
+                game.check_winner()
+                game.gameOver = True
+                time.sleep(5)
+                reset_game()
 
 
     display_all_hands(game)

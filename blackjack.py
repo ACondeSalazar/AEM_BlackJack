@@ -140,7 +140,7 @@ class Dealer(Player):
     
 class AIPlayer(Player):
     
-    def __init__(self, e=1.0, gamma=1.00, alpha=0.02):
+    def __init__(self, e=0.01, gamma=1.00, alpha=0.02):
         super().__init__()
         self.name = "AI"
         self.e = e
@@ -187,8 +187,8 @@ class AIPlayer(Player):
 
     def genAction(self, state, e, Q):
         # Always hit if score <= 11
-        #if self.get_score() <= 11:
-        #    return 1
+        if self.get_score() <= 11:
+            return 1
         
         # With probability e, choose a random action (exploration)
         if random.random() < e:
@@ -302,7 +302,7 @@ class BlackJack:
 
         
         if isinstance(self.players[1], AIPlayer):
-            self.players[1].load_q()
+            #self.players[1].load_q()
             pass
 
         self.deck = Deck()
