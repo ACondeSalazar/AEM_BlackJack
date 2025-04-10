@@ -186,6 +186,7 @@ def rollout(state):
     """
     current_state = state
     ai_score, player_score, dealer_visible = current_state
+
     # Continuer à piocher tant que le score est inférieur à 17 et que l'IA n'est pas bust
     while ai_score < 17:
         # On applique la politique "piocher" (hit)
@@ -198,12 +199,16 @@ def rollout(state):
     # Si l'IA s'arrête (stand) ou est bust, on simule le dealer.
     if ai_score > 21:
         return -1
+    
     dealer_score = simulate_dealer(dealer_visible)
+
+    max_score = max(player_score, dealer_score)
+
     # Simple règle d'évaluation :
     # L'IA gagne si son score est supérieur à celui du joueur et du dealer.
-    if ai_score > player_score and ai_score > dealer_score:
+    if ai_score > max_score:
         return 1
-    elif ai_score == player_score or ai_score == dealer_score:
+    elif ai_score == max_score:
         return 0
     else:
         return -1
@@ -301,22 +306,23 @@ class AIPlayer(Player):
                 for player_card in range(1, 30):
                     self.Q[(score, player_card, dealer_card)][1] = 0.3  # Légère préférence pour hit
 
-    def play(self, otherPlayerHand, dealerHand):
-        """       
-        print(f"Cartes du joueur 0: {self.hand}")
-        print(f"Score: {self.hand.score()}")
-        print(f"Cartes du joueur 1: {otherPlayerHand}")
-        print(f"Score: {otherPlayerHand.score()}")
-        print(f"Cartes du Dealer: {dealerHand}")
-        print(f"Score: {dealerHand.score()}") 
-        """
+        """     
+        def play(self, otherPlayerHand, dealerHand):
+    
+            print(f"Cartes du joueur 0: {self.hand}")
+            print(f"Score: {self.hand.score()}")
+            print(f"Cartes du joueur 1: {otherPlayerHand}")
+            print(f"Score: {otherPlayerHand.score()}")
+            print(f"Cartes du Dealer: {dealerHand}")
+            print(f"Score: {dealerHand.score()}") 
         currentState = self.createStateValues(otherPlayerHand, dealerHand)
         print(f"Current state: {currentState}")
         action = self.genAction(currentState, self.e, self.Q)
         print(f"Action: {action}")
         self.currentEpisode.append((currentState, action, 0))
 
-        return action
+        return action 
+        """
 
     def mcts(self, root_state, iterations=1000):
         """
@@ -361,12 +367,14 @@ class AIPlayer(Player):
             # Si c'est une main, on prend la première carte
             dealer_visible = dealer_score.cards[0] if dealer_score.cards else ('0', '')
         
+        print(f"Dealer visible card: {dealer_visible}") 
+
         # État pour MCTS: (score_ia, score_joueur, carte_visible_dealer)
         state = (ai_score, player_score, dealer_visible)
         print(f"MCTS state: {state}")
         
         # Lancer MCTS pour déterminer l'action
-        action = self.mcts(state, iterations=500)
+        action = self.mcts(state, iterations=10000)
         return action
 
     def play(self, deck, state):
