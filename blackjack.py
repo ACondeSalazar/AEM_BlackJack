@@ -145,73 +145,94 @@ def select(node):
     return current
 
 def simulate_transition(state, action):
-    """
-    Retourne le nouvel état à partir d'un état et d'une action.
-    - Si l'action est "hit" (1) : tire une carte et met à jour le score de l'IA.
-    - Si l'action est "stand" (0) : l'état reste inchangé.
-    
-    L'état est un tuple : (score_ia, score_joueur, dealer_visible)
-    """
     ai_score, player_score, dealer_visible = state
-    if action == 1:  # hit
+    if action == 1: 
         card = draw_random_card()
         new_score = simulate_draw(ai_score, card)
         return (new_score, player_score, dealer_visible)
-    elif action == 0:  # stand
+    elif action == 0: 
         return state
 
 def expand(node):
-    """
-    Développe le noeud en ajoutant un enfant pour une action non encore explorée.
-    """
-    possible_actions = [0, 1]  # 0: stand, 1: hit
+    possible_actions = [0, 1] 
     for action in possible_actions:
         if action not in node.children:
             new_state = simulate_transition(node.state, action)
             child = MCTSNode(new_state, parent=node, action=action)
             node.children[action] = child
             return child
-    # Si les deux actions sont déjà explorées, retourne aléatoirement un enfant
+        
     return random.choice(list(node.children.values()))
 
 def rollout(state):
-    """
-    Simule (rollout) la partie à partir de l'état donné en suivant une politique simple :
-    - Tant que le score de l'IA est inférieur à 17, l'IA continue de piocher.
-    - Sinon, l'IA reste.
-    À la fin, on simule le tour du dealer et on détermine la récompense :
-    - L'IA est considérée gagnante (reward = 1) si son score est supérieur au score du joueur et du dealer.
-    - Si l'IA dépasse 21, c'est une défaite (reward = -1).
-    - Un égalité donne reward = 0.
-    """
     current_state = state
     ai_score, player_score, dealer_visible = current_state
 
-    # Continuer à piocher tant que le score est inférieur à 17 et que l'IA n'est pas bust
     while ai_score < 17:
-        # On applique la politique "piocher" (hit)
         card = draw_random_card()
         ai_score = simulate_draw(ai_score, card)
         current_state = (ai_score, player_score, dealer_visible)
-        # Si bust, on sort immédiatement
         if ai_score > 21:
             break
-    # Si l'IA s'arrête (stand) ou est bust, on simule le dealer.
+
     if ai_score > 21:
         return -1
     
     dealer_score = simulate_dealer(dealer_visible)
 
-    max_score = max(player_score, dealer_score)
+    return check_score_state(ai_score, player_score, dealer_score)
 
-    # Simple règle d'évaluation :
-    # L'IA gagne si son score est supérieur à celui du joueur et du dealer.
-    if ai_score > max_score:
-        return 1
-    elif ai_score == max_score:
-        return 0
-    else:
-        return -1
+
+
+def check_score_state(ai_score, human_score, dealer_score):
+
+        ai_busted = False
+        if human_score > 21:
+            human_busted = True
+        else:
+            human_busted = False
+        if dealer_score > 21:
+            dealer_busted = True
+        else:
+            dealer_busted = False
+
+
+        # Vérification prioritaire du score de l'IA
+        if ai_score > 21:
+            reward = -1
+        else:
+
+            if not human_busted and not dealer_busted:
+                # Ni le joueur ni le dealer n'ont busté
+                if ai_score > human_score and ai_score > dealer_score:
+                    reward = 1
+                elif ai_score == human_score or ai_score == dealer_score:
+                    reward = 0
+                else:
+                    reward = -1
+            elif dealer_busted and not human_busted:
+                # Seul le dealer est busté
+                if ai_score > human_score:
+                    reward = 1
+                elif ai_score == human_score:
+                    reward = 0
+                else:
+                    reward = -1
+            elif human_busted and not dealer_busted:
+                # Seul le joueur est busté
+                if ai_score > dealer_score:
+                    reward = 1
+                elif ai_score == dealer_score:
+                    reward = 0
+                else:
+                    reward = -1
+            elif not ai_busted and dealer_busted and human_busted:
+                reward = 1
+            else:
+                reward = -1
+
+        return reward
+
 
 def simulate_dealer(dealer_visible_card):
     """Simule le jeu du dealer selon les règles du blackjack"""
@@ -236,9 +257,6 @@ def simulate_dealer(dealer_visible_card):
     return dealer_score
 
 def backpropagate(node, reward):
-    """
-    Remonte dans l'arbre en mettant à jour les statistiques (visites et récompense cumulée) de chaque noeud.
-    """
     while node is not None:
         node.visits += 1
         node.reward += reward
@@ -374,7 +392,7 @@ class AIPlayer(Player):
         print(f"MCTS state: {state}")
         
         # Lancer MCTS pour déterminer l'action
-        action = self.mcts(state, iterations=10000)
+        action = self.mcts(state, iterations=100000)
         return action
 
     def play(self, deck, state):
@@ -389,7 +407,7 @@ class AIPlayer(Player):
             print(f"Current state: {currentState}")
             
             # Utiliser MCTS ou Q-learning pour prendre une décision
-            use_mcts = True  # Mettre à True pour utiliser MCTS, False pour Q-learning
+            use_mcts = False  # Mettre à True pour utiliser MCTS, False pour Q-learning
             
             if use_mcts:
                 action = self.mcts_decision(otherPlayerHand.score(), dealerHand)
@@ -667,9 +685,10 @@ class BlackJack:
 
             if not human_busted and not dealer_busted:
                 # Ni le joueur ni le dealer n'ont busté
+                max_score = max(human_score, dealer_score)
                 if ai_score > human_score and ai_score > dealer_score:
                     reward = 1
-                elif ai_score == human_score or ai_score == dealer_score:
+                elif ai_score == max_score:
                     reward = 0
                 else:
                     reward = -1
@@ -791,9 +810,10 @@ class BlackJack:
 
                 if not human_busted and not dealer_busted:
                     # Ni le joueur ni le dealer n'ont busté
-                    if ai_score > human_score and ai_score > dealer_score:
+                    max_score = max(human_score, dealer_score)
+                    if ai_score > max_score:
                         reward = 1
-                    elif ai_score == human_score or ai_score == dealer_score:
+                    elif ai_score == max_score:
                         reward = 0
                     else:
                         reward = -1
