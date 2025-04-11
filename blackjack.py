@@ -5,6 +5,275 @@ import numpy as np
 import math  # Ajout de l'import math nécessaire pour le MCTS
 from constants import *
 from collections import defaultdict, namedtuple
+import matplotlib.pyplot as plt
+import networkx as nx
+
+
+def visualize_complete_mcts(root_state, max_depth=2):
+    """
+    Visualise un arbre MCTS complet avec toutes les possibilités de tirage.
+    
+    Args:
+        root_state: L'état racine (score_ia, score_joueur, carte_visible_dealer)
+        max_depth: Profondeur maximale à visualiser
+    """
+    import matplotlib.pyplot as plt
+    import networkx as nx
+    import math
+    
+    # Créer un graphe dirigé
+    G = nx.DiGraph()
+    
+    # Dictionnaires pour stocker les labels et couleurs
+    node_labels = {}
+    node_colors = []
+    edge_labels = {}
+    
+    # Valeurs possibles des cartes
+    card_values = [2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 11]  # 2-10, J, Q, K, A
+    card_names = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+    
+    # Construire l'arbre complet de manière récursive
+    def build_complete_tree(state, node_id, action=None, depth=0):
+        ai_score, player_score, dealer_visible = state
+        
+        # Ajouter le nœud au graphe
+        G.add_node(node_id)
+        
+        # Format du label: score_ia
+        node_labels[node_id] = f"{ai_score}"
+        
+        # Couleur basée sur l'action
+        if action == 0:  # Stand
+            node_colors.append('lightcoral')
+        elif action == 1:  # Hit
+            node_colors.append('lightgreen')
+        else:  # Racine
+            node_colors.append('lightblue')
+        
+        # Si on atteint la profondeur maximale ou si l'IA bust, on s'arrête
+        if depth >= max_depth or ai_score > 21:
+            return
+        
+        # Action Stand (toujours possible)
+        stand_id = f"{node_id}_stand"
+        G.add_node(stand_id)
+        G.add_edge(node_id, stand_id)
+        edge_labels[(node_id, stand_id)] = "Stand"
+        build_complete_tree(state, stand_id, action=0, depth=depth+1)
+        
+        # Action Hit avec toutes les cartes possibles
+        for i, (value, name) in enumerate(zip(card_values, card_names)):
+            new_score = ai_score + value
+            # Si l'as nous fait dépasser 21, il vaut 1
+            if name == 'A' and new_score > 21:
+                new_score = ai_score + 1
+                
+            hit_id = f"{node_id}_hit_{name}"
+            new_state = (new_score, player_score, dealer_visible)
+            
+            G.add_node(hit_id)
+            G.add_edge(node_id, hit_id)
+            edge_labels[(node_id, hit_id)] = f"Hit ({name})"
+            
+            build_complete_tree(new_state, hit_id, action=1, depth=depth+1)
+    
+    # Commencer avec l'état racine
+    build_complete_tree(root_state, "root")
+    
+    # Calculer la mise en page hiérarchique
+    try:
+        pos = nx.nx_agraph.graphviz_layout(G, prog='dot')
+    except:
+        pos = nx.spring_layout(G, seed=42)
+    
+    # Créer la figure
+    plt.figure(figsize=(20, 12))
+    
+    # Dessiner le graphe
+    nx.draw(G, pos, labels=node_labels, node_color=node_colors, 
+            node_size=1000, font_size=8, arrows=True)
+    
+    # Dessiner les labels des arêtes
+    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=6)
+    
+    # Ajouter une légende
+    plt.legend(handles=[
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='lightblue', markersize=10, label='Racine'),
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='lightgreen', markersize=10, label='Hit'),
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='lightcoral', markersize=10, label='Stand')
+    ])
+    
+    plt.title("Arbre complet de possibilités pour BlackJack")
+    plt.tight_layout()
+    plt.savefig('mcts_complete_tree.png', dpi=300)
+    plt.show()
+
+""" 
+def visualize_mcts(root_node, max_depth=3):
+
+    Visualise l'arbre MCTS à partir du nœud racine.
+    
+    Args:
+        root_node: Le nœud racine du MCTS
+        max_depth: Profondeur maximale à visualiser (pour éviter les arbres trop grands)
+
+    # Créer un graphe dirigé
+    G = nx.DiGraph()
+    
+    # Dictionnaire pour stocker les labels des nœuds
+    node_labels = {}
+    node_colors = []
+    
+    # Construire le graphe de manière récursive avec limite de profondeur
+    def build_graph(node, node_id, depth=0):
+        if depth > max_depth:
+            return
+            
+        # Format pour le label: score_ia | visites | récompense moyenne
+        ai_score = node.state[0]
+        node_labels[node_id] = f"{ai_score}\n{node.visits}\n{node.reward/node.visits if node.visits else 0:.2f}"
+        
+        # Couleur basée sur l'action (rouge pour stand, vert pour hit)
+        if node.action == 0:
+            node_colors.append('lightcoral')  # Stand
+        elif node.action == 1:
+            node_colors.append('lightgreen')  # Hit
+        else:
+            node_colors.append('lightblue')  # Racine
+        
+        # Ajouter le nœud au graphe
+        G.add_node(node_id)
+        
+        # Pour chaque enfant, ajouter au graphe et créer une arête
+        for action, child in node.children.items():
+            child_id = f"{node_id}_{action}"
+            G.add_node(child_id)
+            G.add_edge(node_id, child_id, label="Hit" if action == 1 else "Stand")
+            build_graph(child, child_id, depth + 1)
+    
+    # Commencer la construction du graphe depuis la racine
+    build_graph(root_node, "root")
+    
+    # Position des nœuds (utiliser un layout hiérarchique)
+    pos = nx.nx_agraph.graphviz_layout(G, prog='dot')
+    
+    # Créer la figure
+    plt.figure(figsize=(12, 8))
+    
+    # Dessiner le graphe
+    nx.draw(G, pos, labels=node_labels, node_color=node_colors, 
+            node_size=2000, font_size=8, arrows=True)
+    
+    # Dessiner les labels des arêtes
+    edge_labels = {(u, v): d['label'] for u, v, d in G.edges(data=True)}
+    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8)
+    
+    # Ajouter une légende
+    plt.legend(handles=[
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='lightblue', markersize=10, label='Racine'),
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='lightgreen', markersize=10, label='Hit'),
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='lightcoral', markersize=10, label='Stand')
+    ])
+    
+    plt.title("Arbre MCTS pour la prise de décision BlackJack")
+    plt.tight_layout()
+    plt.savefig('mcts_tree.png')
+    plt.show()
+
+ """
+
+def visualize_mcts(root_node, max_depth=3):
+    """
+    Visualise l'arbre MCTS à partir du nœud racine.
+    
+    Args:
+        root_node: Le nœud racine du MCTS
+        max_depth: Profondeur maximale à visualiser (pour éviter les arbres trop grands)
+    """
+    # Créer un graphe dirigé
+    G = nx.DiGraph()
+    
+    # Dictionnaires pour stocker les labels, couleurs et types de nœuds
+    node_labels = {}
+    node_types = {}  # Stocke le type de chaque nœud (0=stand, 1=hit, None=racine)
+    edge_labels = {}
+    
+    # Construire le graphe de manière récursive avec limite de profondeur
+    def build_graph(node, node_id, depth=0):
+        if depth > max_depth:
+            return
+            
+        # Format pour le label: score_ia | visites | récompense moyenne
+        ai_score = node.state[0]
+        node_labels[node_id] = f"{ai_score}\n{node.visits}\n{node.reward/node.visits if node.visits else 0:.2f}"
+        
+        # Stocker le type de nœud
+        node_types[node_id] = node.action
+        
+        # Ajouter le nœud au graphe
+        G.add_node(node_id)
+        
+        # Pour chaque enfant, ajouter au graphe et créer une arête
+        for action, children in node.children.items():
+            if isinstance(children, dict):  # Cas pour "hit" avec plusieurs cartes
+                for sub_id, child in children.items():
+                    child_id = f"{node_id}_{sub_id}"
+                    G.add_node(child_id)
+                    node_types[child_id] = child.action  # Stocker le type de l'enfant
+                    label = f"Hit ({child.state[0] - node.state[0]})"
+                    G.add_edge(node_id, child_id, label=label)
+                    edge_labels[(node_id, child_id)] = label
+                    build_graph(child, child_id, depth + 1)
+            else:  # Cas pour "stand" (un seul enfant)
+                child_id = f"{node_id}_{action}"
+                G.add_node(child_id)
+                node_types[child_id] = children.action  # Stocker le type de l'enfant
+                label = "Stand" if action == 0 else "Hit" 
+                G.add_edge(node_id, child_id, label=label)
+                edge_labels[(node_id, child_id)] = label
+                build_graph(children, child_id, depth + 1)
+    
+    # Commencer la construction du graphe depuis la racine
+    build_graph(root_node, "root")
+    
+    # Maintenant que tous les nœuds sont ajoutés, créer un tableau de couleurs correspondant
+    node_colors = []
+    for node in G.nodes():
+        if node_types.get(node) == 0:
+            node_colors.append('lightcoral')  # Stand
+        elif node_types.get(node) == 1:
+            node_colors.append('lightgreen')  # Hit
+        else:
+            node_colors.append('lightblue')  # Racine
+    
+    # Position des nœuds (utiliser un layout hiérarchique)
+    try:
+        pos = nx.nx_agraph.graphviz_layout(G, prog='dot')
+    except:
+        pos = nx.spring_layout(G, seed=42)
+    
+    # Créer la figure
+    plt.figure(figsize=(16, 10))
+    
+    # Dessiner le graphe
+    nx.draw(G, pos, labels=node_labels, node_color=node_colors, 
+            node_size=2000, font_size=8, arrows=True)
+    
+    # Dessiner les labels des arêtes
+    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8)
+    
+    # Ajouter une légende
+    plt.legend(handles=[
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='lightblue', markersize=10, label='Racine'),
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='lightgreen', markersize=10, label='Hit'),
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='lightcoral', markersize=10, label='Stand')
+    ])
+    
+    plt.title("Arbre MCTS pour la prise de décision BlackJack")
+    plt.tight_layout()
+    plt.savefig('mcts_tree.png')
+    plt.show()
 
 class Deck:
     def __init__(self):
@@ -121,19 +390,29 @@ class MCTSNode:
         """Ici, l'expansion est complète si les deux actions (hit et stand) ont été explorées."""
         return len(self.children) == 2
 
+
     @staticmethod
-    def uct_value(child, total_visits, exploration=1.41):
-        """Calcule la valeur UCT (Upper Confidence Bound for Trees) pour un enfant."""
+    def branch_value(child, total_visits, exploration=1.41):
         if child.visits == 0:
             return float('inf')
-        return (child.reward / child.visits) + exploration * math.sqrt(math.log(total_visits) / child.visits)
+            
+        # Réduire l'exploration pour les scores élevés
+        ai_score = child.state[0]
+        if ai_score >= 17:
+            # Réduire le coefficient d'exploration pour les scores élevés
+            local_exploration = exploration * max(0.5, (21 - ai_score) / 8)
+        else:
+            local_exploration = exploration
+            
+        return (child.reward / child.visits) + local_exploration * math.sqrt(math.log(total_visits) / child.visits)
 
 # Fonctions MCTS déplacées au niveau du module
+""" 
 def select(node):
-    """
+
     Sélectionne récursivement un noeud à développer
     en choisissant à chaque étape le noeud enfant avec la plus grande valeur UCT.
-    """
+
     current = node
     while not current.is_terminal():
         if not current.fully_expanded():
@@ -141,7 +420,37 @@ def select(node):
         else:
             total_visits = sum(child.visits for child in current.children.values())
             # Choix du fils avec la plus grande UCT
-            current = max(current.children.values(), key=lambda n: MCTSNode.uct_value(n, total_visits))
+            current = max(current.children.values(), key=lambda n: MCTSNode.branch_value(n, total_visits))
+    return current 
+    """
+
+def select(node):
+    current = node
+    while not current.is_terminal():
+        if not current.fully_expanded():
+            return current
+        else:
+            total_visits = sum(child.visits for action_type in current.children.values() 
+                              for child in (action_type.values() if isinstance(action_type, dict) else [action_type]))
+            
+            # Trouver l'enfant avec la plus grande valeur UCT
+            best_child = None
+            best_value = float('-inf')
+            
+            for action, children in current.children.items():
+                if isinstance(children, dict):  # Pour les actions "hit" avec plusieurs résultats
+                    for child in children.values():
+                        uct_val = MCTSNode.branch_value(child, total_visits)
+                        if uct_val > best_value:
+                            best_value = uct_val
+                            best_child = child
+                else:  # Pour les actions simples comme "stand"
+                    uct_val = MCTSNode.branch_value(children, total_visits)
+                    if uct_val > best_value:
+                        best_value = uct_val
+                        best_child = children
+            
+            current = best_child
     return current
 
 def simulate_transition(state, action):
@@ -152,7 +461,7 @@ def simulate_transition(state, action):
         return (new_score, player_score, dealer_visible)
     elif action == 0: 
         return state
-
+""" 
 def expand(node):
     possible_actions = [0, 1] 
     for action in possible_actions:
@@ -162,26 +471,152 @@ def expand(node):
             node.children[action] = child
             return child
         
-    return random.choice(list(node.children.values()))
+    return random.choice(list(node.children.values())) """
 
-def rollout(state):
+def expand(node):
+    possible_actions = [0, 1]
+    for action in possible_actions:
+        if action not in node.children:
+            if action == 0:  # Stand - simple, juste un nœud
+                new_state = node.state  # L'état reste le même
+                child = MCTSNode(new_state, parent=node, action=0)
+                node.children[0] = child
+                return child
+            
+            elif action == 1:  # Hit - créer un nœud pour chaque carte possible
+                ai_score, player_score, dealer_visible = node.state
+                
+                # Créer un dictionnaire pour stocker les nœuds enfants
+                hit_children = {}
+                
+                # Distribution des cartes dans un jeu standard:
+                # 4 cartes de chaque valeur 2-9
+                # 16 cartes valant 10 (10, J, Q, K × 4 couleurs)
+                # 4 As
+                
+                # Créer des nœuds pour chaque valeur numérique 2-9
+                for card_value in range(2, 10):
+                    new_score = ai_score + card_value
+                    new_state = (new_score, player_score, dealer_visible)
+                    card_node = MCTSNode(new_state, parent=node, action=1)
+                    # Stocker le nœud avec une clé qui inclut la probabilité (4/52)
+                    hit_children[f"1_{card_value}"] = {
+                        "node": card_node,
+                        "prob": 4/52  # 4 cartes de chaque valeur sur 52
+                    }
+                
+                # Cartes valant 10 (10, J, Q, K)
+                ten_score = ai_score + 10
+                ten_state = (ten_score, player_score, dealer_visible)
+                ten_node = MCTSNode(ten_state, parent=node, action=1)
+                hit_children[f"1_10"] = {
+                    "node": ten_node,
+                    "prob": 16/52  # 16 cartes valant 10 sur 52
+                }
+                
+                # As (vaut 11 si possible, sinon 1)
+                ace_value = 11 if ai_score <= 10 else 1
+                ace_score = ai_score + ace_value
+                ace_state = (ace_score, player_score, dealer_visible)
+                ace_node = MCTSNode(ace_state, parent=node, action=1)
+                hit_children[f"1_A"] = {
+                    "node": ace_node,
+                    "prob": 4/52  # 4 As sur 52
+                }
+                
+                # Stocker tous ces nœuds dans un dictionnaire
+                node_dict = {}
+                for key, data in hit_children.items():
+                    node_dict[key] = data["node"]
+                
+                node.children[1] = node_dict
+                
+                # Sélectionner un nœud aléatoirement mais pondéré par probabilité
+                weights = [data["prob"] for data in hit_children.values()]
+                keys = list(hit_children.keys())
+                chosen_key = random.choices(keys, weights=weights, k=1)[0]
+                
+                # Retourner le nœud choisi
+                return hit_children[chosen_key]["node"]
+    
+    # Si les deux actions sont déjà explorées, choisir un enfant "hit" pondéré par probabilité
+    if isinstance(node.children.get(1), dict):
+        # Distribution des probabilités selon les cartes
+        probs = []
+        nodes = []
+        for key, child in node.children[1].items():
+            if key.startswith("1_10"):
+                probs.append(16/52)  # 10, J, Q, K (16 cartes)
+            elif key.startswith("1_A"):
+                probs.append(4/52)   # As (4 cartes)
+            else:
+                probs.append(4/52)   # Autres valeurs (4 cartes chacune)
+            nodes.append(child)
+        
+        return random.choices(nodes, weights=probs, k=1)[0]
+    
+    # Fallback
+    return random.choice(list(node.children.values()))
+""" 
+def rollout(state, action):
     current_state = state
     ai_score, player_score, dealer_visible = current_state
 
-    while ai_score < 17:
-        card = draw_random_card()
-        ai_score = simulate_draw(ai_score, card)
-        current_state = (ai_score, player_score, dealer_visible)
-        if ai_score > 21:
-            break
+    if action == 1:
+        while ai_score < 17:
+            card = draw_random_card()
+            ai_score = simulate_draw(ai_score, card)
+            current_state = (ai_score, player_score, dealer_visible)
+            if ai_score > 21:
+                break
 
     if ai_score > 21:
         return -1
-    
+
     dealer_score = simulate_dealer(dealer_visible)
 
     return check_score_state(ai_score, player_score, dealer_score)
 
+ """
+def rollout(state, action):
+    current_state = state
+    ai_score, player_score, dealer_visible = current_state
+
+    # Valeur entre 0 et 1 qui représente la probabilité de bust
+    bust_risk = max(0, min(1, (ai_score - 11) / 10))
+    
+    if action == 1:  # Si l'action est Hit
+        # Pour les scores élevés, calculer le risque de bust
+        if ai_score >= 17:
+            # Probabilité accrue de bust = résultat négatif plus fréquent
+            if random.random() < bust_risk:
+                return -1  # Simuler un bust
+        
+        # Stratégie de base améliorée
+        while ai_score < 17:
+            card = draw_random_card()
+            ai_score = simulate_draw(ai_score, card)
+            current_state = (ai_score, player_score, dealer_visible)
+            if ai_score > 21:
+                return -1  # Bust immédiat
+
+    if ai_score > 21:
+        return -1
+
+    # Bonus pour des scores proches de 21 sans bust
+    score_bonus = 0
+    if 17 <= ai_score <= 21:
+        score_bonus = (ai_score - 17) / 8  # Entre 0 et 0.5 pour scores 17-21
+    
+    dealer_score = simulate_dealer(dealer_visible)
+    
+    result = check_score_state(ai_score, player_score, dealer_score)
+    
+    # Amplifier légèrement les résultats positifs pour les scores élevés sans bust
+    if result > 0 and score_bonus > 0:
+        result += score_bonus * 0.2
+        
+    return result
 
 
 def check_score_state(ai_score, human_score, dealer_score):
@@ -342,29 +777,59 @@ class AIPlayer(Player):
         return action 
         """
 
-    def mcts(self, root_state, iterations=1000):
-        """
-        Effectue l'exploration MCTS à partir de l'état racine pendant un nombre donné d'itérations.
-        Retourne l'action (0 = stand, 1 = hit) à jouer à partir du noeud racine.
-        """
+    def mcts(self, root_state, iterations=1000, visualize=False):
         root_node = MCTSNode(root_state)
         for _ in range(iterations):
-            # Sélection : choisir un noeud à développer
             node = select(root_node)
-            # Expansion : si le noeud n'est pas terminal, développer un enfant
             if not node.is_terminal():
                 node = expand(node)
-            # Simulation (rollout)
-            reward = rollout(node.state)
-            # Backpropagation : mettre à jour les statistiques le long du chemin
+            reward = rollout(node.state, node.action)
             backpropagate(node, reward)
             
-        # Choix de l'action optimale : on prend l'action de l'enfant le plus visité
-        if not root_node.children:
-            return 0  # par défaut, si aucun enfant, on reste (stand)
+        if visualize:
+            try:
+                visualize_mcts(root_node)
+            except ImportError:
+                print("Bibliothèques de visualisation non disponibles.")
         
-        best_child = max(root_node.children.values(), key=lambda n: n.visits)
-        return best_child.action
+        if not root_node.children:
+            return 0  
+        
+        # Décision finale - tenir compte du score et du risque
+        ai_score = root_state[0]
+        
+        # Règles spécifiques pour les scores élevés
+        if ai_score >= 17:
+            # Calculer le risque de bust
+            bust_risk = (ai_score - 16) / 5  # 0.2 pour 17, 0.4 pour 18, etc.
+            
+            # Si risque élevé et un des enfants n'a pas bust, préférer stand
+            if bust_risk > 0.6 and 0 in root_node.children:
+                return 0
+        
+        # Pour les autres cas, évaluer les visites pondérées par récompenses moyennes
+        best_action = None
+        best_value = float('-inf')
+        
+        for action, child_or_dict in root_node.children.items():
+            if isinstance(child_or_dict, dict):  # Si c'est un dictionnaire (action "hit")
+                # Calculer la valeur moyenne pour tous les enfants de cette action
+                total_visits = sum(child.visits for child in child_or_dict.values())
+                total_reward = sum(child.reward for child in child_or_dict.values())
+                
+                # Score pondéré supplémentaire: réduire la valeur pour les scores risqués
+                action_value = (total_reward / total_visits) if total_visits > 0 else 0
+                
+                if action_value > best_value:
+                    best_value = action_value
+                    best_action = action
+            else:  # Si c'est un nœud unique (action "stand")
+                action_value = (child_or_dict.reward / child_or_dict.visits) if child_or_dict.visits > 0 else 0
+                if action_value > best_value:
+                    best_value = action_value
+                    best_action = action
+        
+        return best_action
 
     def mcts_decision(self, player_score, dealer_score):
         """
@@ -391,8 +856,10 @@ class AIPlayer(Player):
         state = (ai_score, player_score, dealer_visible)
         print(f"MCTS state: {state}")
         
+        #visualize_complete_mcts(state, max_depth=2)
+
         # Lancer MCTS pour déterminer l'action
-        action = self.mcts(state, iterations=100000)
+        action = self.mcts(state, iterations=100000, visualize=True)
         return action
 
     def play(self, deck, state):
